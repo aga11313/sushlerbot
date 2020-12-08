@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from typing import List, Any, Dict
 import json
 import asyncio
-from collections import defaultdict
+from collections import Counter
+import time
 
 
 class ConfigMap:
@@ -50,12 +51,14 @@ class KeyboardController:
 
 class Bot(commands.Bot):
     def __init__(self, irc_token, client_id, nick, prefix,
-                 initial_channels, config):
+                 initial_channels, config, timeout):
         super().__init__(irc_token=irc_token, client_id=client_id, nick=nick, prefix=prefix,
                          initial_channels=initial_channels)
         self.snap_controller = KeyboardController(config)
-        self.count_dict = defaultdict(lambda: 0)
+        self.votes = {}
         self.set_of_face_options = set(self.snap_controller.print_content())
+        self.vote_timeout = timeout
+        self.last_face_vote = time.monotonic() - self.vote_timeout
 
     async def event_ready(self):
         print(f"{os.environ['BOT_NICK']} is online!")
@@ -69,15 +72,25 @@ class Bot(commands.Bot):
         else:
             print("some message", ctx.content)
             if ctx.content.strip() in self.set_of_face_options:
-                self.count_dict[ctx.content.strip()] += 1
+                self.votes[ctx.author.name] = ctx.content.strip()
             await self.handle_commands(ctx)
 
     @commands.command(name='face')
     async def my_command(self, ctx):
-        self.count_dict.clear()
-        await ctx.send("Possible options: {}".format(self.snap_controller.config.print_content()))
-        await asyncio.sleep(10)
-        winner = max(self.count_dict.items(), key=lambda a: a[1])[0]
+        now = time.monotonic()
+        difference = abs(now - self.last_face_vote)
+        if difference <= self.vote_timeout:
+            await ctx.send(f"You need to wait {int(self.vote_timeout - difference)} seconds more")
+            return
+        self.last_face_vote = now
+        self.votes.clear()
+        message = ""
+        for option in self.snap_controller.config.print_content():
+            message += option + "\n"
+        await ctx.send("Possible options: \n{}".format(message))
+        await asyncio.sleep(30)
+        counter = Counter(self.votes.values())
+        winner = counter.most_common(1)[0][0]
         await ctx.send("Winner is {}".format(winner))
         await ctx.send("Ha! Your time is up!")
         # print("command was", ctx.content.replace('!' + ctx.command.name, ""))
@@ -97,7 +110,8 @@ if __name__ == "__main__":
         nick=os.environ['BOT_NICK'],
         prefix=os.environ['BOT_PREFIX'],
         initial_channels=[os.environ['CHANNEL']],
-        config=ConfigMap.load("config.json")
+        config=ConfigMap.load("config.json"),
+        timeout=float(os.environ['VOTE_TIMEOUT']),
     )
     
     bot.run()
