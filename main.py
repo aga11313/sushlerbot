@@ -68,38 +68,40 @@ class Bot(commands.Bot):
     async def event_message(self, ctx):
         # make sure the bot ignores itself and the streamer
         if ctx.author.name.lower() == os.environ['BOT_NICK'].lower():
-            print("it's me")
+            pass
         else:
-            print("some message", ctx.content)
             if ctx.content.strip() in self.set_of_face_options:
                 self.votes[ctx.author.name] = ctx.content.strip()
             await self.handle_commands(ctx)
 
     @commands.command(name='face')
     async def my_command(self, ctx):
+        print("Starting voting")
         now = time.monotonic()
         difference = abs(now - self.last_face_vote)
         if difference <= self.vote_timeout:
+            print("Voting is timed out")
             await ctx.send(f"You need to wait {int(self.vote_timeout - difference)} seconds more")
             return
         self.last_face_vote = now
         self.votes.clear()
+        # contstruct message
+        await ctx.send("You have 30 seconds to vote")
         message = ""
         for option in self.snap_controller.config.print_content():
-            message += option + "\n"
-        await ctx.send("Possible options: \n{}".format(message))
+            message += option + ", "
+        await ctx.send("Possible options: {}".format(message))
+        print("Waiting 30 seconds for votes")
         await asyncio.sleep(30)
         counter = Counter(self.votes.values())
         winner = counter.most_common(1)[0][0]
+        await ctx.send("Votes have been counted!")
         await ctx.send("Winner is {}".format(winner))
-        await ctx.send("Ha! Your time is up!")
-        # print("command was", ctx.content.replace('!' + ctx.command.name, ""))
-        # args = ctx.content.replace('!' + ctx.command.name, "").strip()
         try:
             self.snap_controller.execute(winner)
         except:
-            print("ERRRROROROROROR")
-        await ctx.send(f'Face changed!')
+            print("Failed to execute snap command")
+        # await ctx.send(f'Face changed!')
 
 
 if __name__ == "__main__":
