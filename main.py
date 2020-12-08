@@ -48,6 +48,7 @@ class KeyboardController:
     def print_content(self):
         return self.config.print_content()
 
+CLEAR_COMMAND = "clear"
 
 class Bot(commands.Bot):
     def __init__(self, irc_token, client_id, nick, prefix,
@@ -57,8 +58,10 @@ class Bot(commands.Bot):
         self.snap_controller = KeyboardController(config)
         self.votes = {}
         self.set_of_face_options = set(self.snap_controller.print_content())
+        self.set_of_face_options.add(CLEAR_COMMAND)
         self.vote_timeout = timeout
         self.last_face_vote = time.monotonic() - self.vote_timeout
+        self.last_used_face = None
 
     async def event_ready(self):
         print(f"{os.environ['BOT_NICK']} is online!")
@@ -77,28 +80,41 @@ class Bot(commands.Bot):
     @commands.command(name='face')
     async def my_command(self, ctx):
         print("Starting voting")
+
         now = time.monotonic()
         difference = abs(now - self.last_face_vote)
         if difference <= self.vote_timeout:
             print("Voting is timed out")
             await ctx.send(f"You need to wait {int(self.vote_timeout - difference)} seconds more")
             return
+
+        if self.last_used_face is not None:
+            try:
+                self.snap_controller.execute(self.last_used_face)
+            except:
+                pass
+
         self.last_face_vote = now
         self.votes.clear()
+        
         # contstruct message
         await ctx.send("You have 30 seconds to vote")
         message = ""
-        for option in self.snap_controller.config.print_content():
+        for option in self.set_of_face_options:
             message += option + ", "
         await ctx.send("Possible options: {}".format(message))
         print("Waiting 30 seconds for votes")
         await asyncio.sleep(30)
         counter = Counter(self.votes.values())
         winner = counter.most_common(1)[0][0]
+
+        self.last_used_face = winner
+
         await ctx.send("Votes have been counted!")
         await ctx.send("Winner is {}".format(winner))
         try:
-            self.snap_controller.execute(winner)
+            if winner != CLEAR_COMMAND:
+                self.snap_controller.execute(winner)
         except:
             print("Failed to execute snap command")
         # await ctx.send(f'Face changed!')
