@@ -3,34 +3,49 @@ import os  # for importing env vars for the bot to use
 from twitchio.ext import commands
 from dataclasses import dataclass
 from typing import List, Any, Dict
+import json
 
 
-@dataclass
-class KeyCombo:
-    commands: List[Any]
+class ConfigMap:
+    def __init__(self, data):
+        self.data = data
+
+    def get_combo(self, key):
+        return self.data.get(key, None)
+
+    @staticmethod
+    def load(path):
+        with open(path, "r") as f:
+            text = f.read()
+            deserailized = json.loads(text)
+            return ConfigMap(data=deserailized)
 
 
 class KeyboardController:
-    def __init__(self, commands: Dict[str, KeyCombo]):
-        self.commands = commands
+    def __init__(self, config: ConfigMap):
+        self.config = config
+        self.static = [Key.ctrl, Key.shift]
         self.controller = Controller()
 
     def execute(self, command_id: str):
-        combo = self.commands[command_id]
-        for key in combo.commands:
+        for key in self.static:
             self.controller.press(key)
+        try:
+            key = self.config.get_combo(command_id)
+            self.controller.press(key)
+            self.controller.release(key)
+        except:
+            pass
+        for key in self.static:
+            self.controller.release(key)
 
 
 class Bot(commands.Bot):
     def __init__(self, irc_token, client_id, nick, prefix,
-                 initial_channels):
+                 initial_channels, config):
         super().__init__(irc_token=irc_token, client_id=client_id, nick=nick, prefix=prefix,
                          initial_channels=initial_channels)
-        self.snap_controller = KeyboardController({
-                "zebra": KeyCombo([Key.ctrl, Key.shift, '1']),
-                "bunny": KeyCombo([Key.ctrl, Key.shift, '2']),
-                "deer": KeyCombo([Key.ctrl, Key.shift, '3'])
-            })
+        self.snap_controller = KeyboardController(config)
 
     async def event_ready(self):
         print(f"{os.environ['BOT_NICK']} is online!")
@@ -63,15 +78,8 @@ if __name__ == "__main__":
         client_id=os.environ['CLIENT_ID'],
         nick=os.environ['BOT_NICK'],
         prefix=os.environ['BOT_PREFIX'],
-        initial_channels=[os.environ['CHANNEL']]
+        initial_channels=[os.environ['CHANNEL']],
+        config=ConfigMap.load("config.json")
     )
+    
     bot.run()
-
-# keyboard = Controller()
-# keyboard.press(Key.ctrl)
-# keyboard.press(Key.shift)
-# keyboard.press('1')
-
-# keyboard.release(Key.ctrl)
-# keyboard.release(Key.shift)
-# keyboard.release('1')
