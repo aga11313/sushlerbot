@@ -107,6 +107,9 @@ class Bot(commands.Bot):
         await asyncio.sleep(30)
         counter = Counter(self.votes.values())
         winner = counter.most_common(1)[0][0]
+        if winner == "zebra":
+              winner = "clear"
+              await ctx.send("NO NO NO NO")
 
         self.last_used_face = winner
 
