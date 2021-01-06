@@ -7,6 +7,7 @@ import json
 import asyncio
 from collections import Counter
 import time
+import random
 
 
 class ConfigMap:
@@ -48,7 +49,36 @@ class KeyboardController:
     def print_content(self):
         return self.config.print_content()
 
+
 CLEAR_COMMAND = "clear"
+
+
+class VoteCounter:
+    def __init__(self, options):
+        self.votes = {}
+        self.options = set([option.lower() for option in options])
+        self.options.add(CLEAR_COMMAND.lower())
+
+    def is_option(self, option):
+        return option.lower() in self.options
+
+    def vote(self, user, vote):
+        self.votes[user.lower()] = vote.lower()
+
+    def clear_votes(self):
+        self.votes.clear()
+
+    def select_winner(self):
+        if not self.votes:
+            return CLEAR_COMMAND
+        counter = Counter(self.votes.values())
+        highest_count = max([count for key, count in counter.most_common()])
+        highest_voted = []
+        for key, count in counter.most_common():
+            if count == highest_count:
+                highest_voted.append(key)
+        return random.choice(highest_voted)
+
 
 class Bot(commands.Bot):
     def __init__(self, irc_token, client_id, nick, prefix,
@@ -56,9 +86,7 @@ class Bot(commands.Bot):
         super().__init__(irc_token=irc_token, client_id=client_id, nick=nick, prefix=prefix,
                          initial_channels=initial_channels)
         self.snap_controller = KeyboardController(config)
-        self.votes = {}
-        self.set_of_face_options = set(self.snap_controller.print_content())
-        self.set_of_face_options.add(CLEAR_COMMAND)
+        self.vote_counter = VoteCounter(self.snap_controller.print_content())
         self.vote_timeout = timeout
         self.last_face_vote = time.monotonic() - self.vote_timeout
         self.last_used_face = None
@@ -73,8 +101,8 @@ class Bot(commands.Bot):
         if ctx.author.name.lower() == os.environ['BOT_NICK'].lower():
             pass
         else:
-            if ctx.content.strip() in self.set_of_face_options:
-                self.votes[ctx.author.name] = ctx.content.strip()
+            if self.vote_counter.is_option(ctx.content.strip()):
+                self.vote_counter.vote(ctx.author.name, ctx.content.strip())
             await self.handle_commands(ctx)
 
     @commands.command(name='face')
@@ -95,18 +123,17 @@ class Bot(commands.Bot):
                 pass
 
         self.last_face_vote = now
-        self.votes.clear()
-        
+        self.vote_counter.clear_votes()
+
         # contstruct message
         await ctx.send("You have 30 seconds to vote")
         message = ""
-        for option in self.set_of_face_options:
+        for option in self.snap_controller.print_content():
             message += option + ", "
         await ctx.send("Possible options: {}".format(message))
         print("Waiting 30 seconds for votes")
         await asyncio.sleep(30)
-        counter = Counter(self.votes.values())
-        winner = counter.most_common(1)[0][0]
+        winner = self.vote_counter.select_winner()
 
         self.last_used_face = winner
 
@@ -131,5 +158,5 @@ if __name__ == "__main__":
         config=ConfigMap.load("config.json"),
         timeout=float(os.environ['VOTE_TIMEOUT']),
     )
-    
+
     bot.run()
