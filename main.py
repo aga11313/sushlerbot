@@ -125,7 +125,7 @@ class Bot(commands.Bot):
         self.last_face_vote = now
         self.vote_counter.clear_votes()
 
-        # contstruct message
+        # construct message
         await ctx.send("You have 30 seconds to vote")
         message = ""
         for option in self.snap_controller.print_content():
